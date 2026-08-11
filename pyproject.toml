@@ -1,6 +1,6 @@
 [project]
 name = "minimax-h3-extend"
-description = ""
+description = "Adds video continuation / extension capabilities to Minimax-H3 in ComfyUI"
 version = "1.0.0"
 license = "MIT"
 
@@ -28,7 +28,7 @@ Documentation = "https://github.com/kat3ri/ComfyUI-MiniMax-H3-Extend/wiki"
 "Bug Tracker" = "https://github.com/kat3ri/ComfyUI-MiniMax-H3-Extend/issues"
 
 [tool.comfy]
-PublisherId = ""
+PublisherId = "kayte0342"
 DisplayName = "ComfyUI-MiniMax-H3-Extend"
 Icon = ""
 includes = []
