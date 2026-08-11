@@ -47,45 +47,7 @@ overrides a real fork's better native support):
    name there -- e.g. `ComfyUI-H3-Cast`'s `H3CastToVideoExtend` -- finds a
    working implementation transparently, no changes of its own needed.
 
-## Deliberately NOT ported
 
-The fork has diverged substantially from upstream ComfyUI (72 files,
-+2616/-8194 lines as of 2026-08-11 -- much of that unrelated drift, not this
-feature). Scoped down to just what's needed for "continue a prior clip,
-optionally with reference images/audio at the same time":
-
-- **`temporal_stretch`** -- spreads target frames' positions apart for a
-  slow-motion-of-a-longer-clip effect. Separate mechanism, not needed for
-  extend to work at all.
-- **scene3d / world-latent grounding** -- a spatial-reference mechanism
-  (e.g. a rendered room's own latent) layered on the same positional
-  machinery. Also separate.
-- **Per-block noise-augmentation strength (`aug`)** -- the fork threads a
-  strength value through every segment (`(kind, n_rows, aug)` 3-tuples
-  instead of stock's `(kind, n_rows)`). Dropped entirely here to avoid
-  touching every downstream consumer of `PackedLayout.segments` (several
-  unpacking sites elsewhere in `model.py` all expect the 2-element stock
-  shape) -- context frames always run at full strength (no noise blending).
-- **`context_static_time`** -- pins all context frames to the same zero-
-  distance point instead of stepping them back through real time. That
-  option exists specifically for the scene3d/world case ("this isn't really
-  a prior moment, it's a spatial reference"), which isn't ported.
-
-If you need any of these, the honest answer is the fork, not this pack.
-
-## Verification status
-
-**Ported from the fork's actual model code and reasoned through carefully,
-but not yet confirmed against a live reference render.** Positional-encoding
-math that's subtly wrong produces plausible-looking but *incorrect* output,
-not an error -- confirm this actually matches expected continuation behavior
-before trusting it for real work.
-
-The rigorous way to check (same class as the correctness gates a colleague's
-separate multi-GPU MiniMax H3 project uses for its own changes): render the
-same shot's extend step on both this patch (stock ComfyUI) and the real fork,
-same seed/settings, and compare. Until that's been done, treat output from
-this as unverified.
 
 ## Install
 
