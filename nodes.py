@@ -145,7 +145,7 @@ def _build_ref_blocks(vae, audio_vae, width, height, frame_count, ref_image_size
 
 
 def _execute(clip, vae, context_latent, prompt, length, context_frames=2, pin_last_frame=True,
-             first_frame=None, audio_vae=None, ref_image_size="match", ref_images=None,
+             first_frame=None, last_frame=None, audio_vae=None, ref_image_size="match", ref_images=None,
              ref_videos=None, ref_video_audios=None, ref_audios=None):
     import node_helpers
     import comfy_extras.nodes_minimax_h3 as native
@@ -157,6 +157,12 @@ def _execute(clip, vae, context_latent, prompt, length, context_frames=2, pin_la
     elif pin_last_frame:
         keyframes.append(_pin_last_context_frame(vae, context_latent, width, height, native._resize))
     latent, frame_count = native._empty_av_latent(width, height, length)
+    if last_frame is not None:
+        # aspect-preserving cover-crop ("follower"), same convention stock's
+        # own MiniMaxH3ImageToVideo uses for its last_frame -- distinct from
+        # first_frame's plain stretch ("geometry anchor")
+        img = native._resize(last_frame[:1], width, height, "center")
+        keyframes.append({"resolved_frame_index": frame_count - 1, "image": img})
 
     ref_items, ref_blocks = ([], [])
     if any((ref_images, ref_videos, ref_audios)):
@@ -202,7 +208,8 @@ class MiniMaxH3VideoExtendPatched:
             },
             "optional": {
                 "audio_vae": ("VAE",),
-                "first_frame": ("IMAGE", {"tooltip": "Hard-pin frame 0 to an exact image (e.g. the prior clip's real last output frame) instead of pin_last_frame's decode"}),
+                "first_frame": ("IMAGE", {"tooltip": "Hard-pin this call's frame 0 to an exact image (e.g. the prior clip's real last output frame) instead of pin_last_frame's decode"}),
+                "last_frame": ("IMAGE", {"tooltip": "Pin this continuation segment's own final frame to an exact image -- e.g. to land precisely on a known next shot/keyframe instead of leaving the ending fully generated. Not part of the native fork's VideoExtend node (which has no end-anchor at all); added here since it's a natural, low-risk extension of the same PackedLayout mechanism first_frame/context already use."}),
                 "ref_image_size": (["match", "max"], {"default": "match"}),
                 "ref_images": ("IMAGE", {"tooltip": "Reference image(s) -- connect a batch (e.g. via ImageBatch) for more than one; each frame becomes its own <Picture i> reference. Not the native node's per-slot Autogrow inputs -- this is a single batched socket."}),
                 "ref_audio": ("AUDIO", {"tooltip": "One standalone reference audio clip"}),
@@ -216,7 +223,7 @@ class MiniMaxH3VideoExtendPatched:
     DESCRIPTION = "Continue a prior MiniMax H3 clip from its trailing latent frames (backported, see README.md)."
 
     def run(self, clip, vae, context_latent, prompt, length, context_frames=2, pin_last_frame=True,
-            audio_vae=None, first_frame=None, ref_image_size="match", ref_images=None, ref_audio=None):
+            audio_vae=None, first_frame=None, last_frame=None, ref_image_size="match", ref_images=None, ref_audio=None):
         # this classic dict-based node has no equivalent to the native node's
         # Autogrow (numbered ref_image_0/1/2... slots bundled into a dict
         # before execute() ever sees them) -- confirmed 2026-08-11 that a
@@ -231,7 +238,7 @@ class MiniMaxH3VideoExtendPatched:
 
         cond, latent = _execute(
             clip, vae, context_latent, prompt, length, context_frames=context_frames,
-            pin_last_frame=pin_last_frame, first_frame=first_frame, audio_vae=audio_vae,
+            pin_last_frame=pin_last_frame, first_frame=first_frame, last_frame=last_frame, audio_vae=audio_vae,
             ref_image_size=ref_image_size, ref_images=ref_images_dict, ref_audios=ref_audios_dict,
         )
         return (cond, latent)
@@ -301,11 +308,11 @@ class _NativeShim:
 
     @classmethod
     def execute(cls, clip, vae, audio_vae, context_latent, prompt, length, context_frames=2,
-                pin_last_frame=True, first_frame=None, ref_image_size="match",
+                pin_last_frame=True, first_frame=None, last_frame=None, ref_image_size="match",
                 ref_images=None, ref_videos=None, ref_video_audios=None, ref_audios=None):
         return _execute(
             clip, vae, context_latent, prompt, length, context_frames=context_frames,
-            pin_last_frame=pin_last_frame, first_frame=first_frame, audio_vae=audio_vae,
+            pin_last_frame=pin_last_frame, first_frame=first_frame, last_frame=last_frame, audio_vae=audio_vae,
             ref_image_size=ref_image_size, ref_images=ref_images, ref_videos=ref_videos,
             ref_video_audios=ref_video_audios, ref_audios=ref_audios,
         )
