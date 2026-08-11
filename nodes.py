@@ -204,10 +204,8 @@ class MiniMaxH3VideoExtendPatched:
                 "audio_vae": ("VAE",),
                 "first_frame": ("IMAGE", {"tooltip": "Hard-pin frame 0 to an exact image (e.g. the prior clip's real last output frame) instead of pin_last_frame's decode"}),
                 "ref_image_size": (["match", "max"], {"default": "match"}),
-                "ref_images": ("IMAGE",),
-                "ref_videos": ("IMAGE",),
-                "ref_video_audios": ("AUDIO",),
-                "ref_audios": ("AUDIO",),
+                "ref_images": ("IMAGE", {"tooltip": "Reference image(s) -- connect a batch (e.g. via ImageBatch) for more than one; each frame becomes its own <Picture i> reference. Not the native node's per-slot Autogrow inputs -- this is a single batched socket."}),
+                "ref_audio": ("AUDIO", {"tooltip": "One standalone reference audio clip"}),
             },
         }
 
@@ -218,13 +216,23 @@ class MiniMaxH3VideoExtendPatched:
     DESCRIPTION = "Continue a prior MiniMax H3 clip from its trailing latent frames (backported, see README.md)."
 
     def run(self, clip, vae, context_latent, prompt, length, context_frames=2, pin_last_frame=True,
-            audio_vae=None, first_frame=None, ref_image_size="match", ref_images=None,
-            ref_videos=None, ref_video_audios=None, ref_audios=None):
+            audio_vae=None, first_frame=None, ref_image_size="match", ref_images=None, ref_audio=None):
+        # this classic dict-based node has no equivalent to the native node's
+        # Autogrow (numbered ref_image_0/1/2... slots bundled into a dict
+        # before execute() ever sees them) -- confirmed 2026-08-11 that a
+        # plain IMAGE socket arrives as a raw tensor, not a dict, so any()
+        # over it blows up on ambiguous multi-element truthiness. Wrap
+        # whatever's connected into the dict shape _execute()/_build_ref_blocks
+        # actually expect, splitting a batch into one ref_image_N per frame.
+        ref_images_dict = None
+        if ref_images is not None:
+            ref_images_dict = {f"ref_image_{i + 1}": ref_images[i:i + 1] for i in range(ref_images.shape[0])}
+        ref_audios_dict = {"ref_audio_1": ref_audio} if ref_audio is not None else None
+
         cond, latent = _execute(
             clip, vae, context_latent, prompt, length, context_frames=context_frames,
             pin_last_frame=pin_last_frame, first_frame=first_frame, audio_vae=audio_vae,
-            ref_image_size=ref_image_size, ref_images=ref_images, ref_videos=ref_videos,
-            ref_video_audios=ref_video_audios, ref_audios=ref_audios,
+            ref_image_size=ref_image_size, ref_images=ref_images_dict, ref_audios=ref_audios_dict,
         )
         return (cond, latent)
 
