@@ -229,6 +229,59 @@ class MiniMaxH3VideoExtendPatched:
         return (cond, latent)
 
 
+def _encode_ref_audio_for_context(audio_vae, audio):
+    """Vendored from the native nodes_minimax_h3.py's module-level
+    _encode_ref_audio -- see MiniMaxH3EncodeAVPatched's docstring for why."""
+    import torchaudio
+
+    waveform = audio["waveform"]  # [B, C, L]
+    sr = audio["sample_rate"]
+    vae_sr = getattr(audio_vae, "audio_sample_rate", 32000)
+    if sr != vae_sr:
+        waveform = torchaudio.functional.resample(waveform, sr, vae_sr)
+    z = audio_vae.encode(waveform[:1].movedim(1, -1))  # [1, 32, 2, T]
+    return z, z.shape[-1]
+
+
+class MiniMaxH3EncodeAVPatched:
+    """VAE-encode video frames (+ optional audio) into a MiniMax H3 AV latent
+    (NestedTensor pair) -- feeds MiniMaxH3VideoExtendPatched's context_latent
+    input from externally-sourced footage (e.g. VHS_LoadVideo). Vendored from
+    the native MiniMaxH3EncodeAV node, which isn't part of stock/public
+    MiniMax H3 support either (only kat3ri/ComfyUI's fork) -- lives here
+    rather than in ComfyUI-H3-Cast since it's an extend/continuation concern,
+    not a cast/character one."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "vae": ("VAE",),
+                "images": ("IMAGE", {"tooltip": "Video frames at 24 fps"}),
+            },
+            "optional": {
+                "audio_vae": ("VAE",),
+                "audio": ("AUDIO",),
+            },
+        }
+
+    RETURN_TYPES = ("LATENT",)
+    FUNCTION = "run"
+    CATEGORY = "model/latent/minimax"
+    DESCRIPTION = "VAE-encode video frames (+ optional audio) into a MiniMax H3 AV latent (NestedTensor pair)."
+
+    def run(self, vae, images, audio_vae=None, audio=None):
+        import comfy.nested_tensor
+
+        video_z = vae.encode(images[..., :3])
+        if audio is None:
+            return ({"samples": video_z},)
+        if audio_vae is None:
+            raise ValueError("audio_vae is required when audio is supplied")
+        audio_z, _ = _encode_ref_audio_for_context(audio_vae, audio)
+        return ({"samples": comfy.nested_tensor.NestedTensor((video_z, audio_z))},)
+
+
 class _NativeShim:
     """Matches the calling convention H3CastToVideoExtend (ComfyUI-H3-Cast)
     already uses against the real native node -- a classmethod `execute`
@@ -251,19 +304,23 @@ class _NativeShim:
 
 
 def inject_into_native():
-    """Adds MiniMaxH3VideoExtend to comfy_extras.nodes_minimax_h3's own
-    namespace, only if genuinely absent, so anything that looks it up by
-    that name there (e.g. ComfyUI-H3-Cast's H3CastToVideoExtend) finds a
-    working implementation transparently -- never overrides a real native
-    class that's already there."""
+    """Adds MiniMaxH3VideoExtend/MiniMaxH3EncodeAV to
+    comfy_extras.nodes_minimax_h3's own namespace, only if genuinely absent,
+    so anything that looks either up by name there (e.g. ComfyUI-H3-Cast's
+    H3CastToVideoExtend) finds a working implementation transparently --
+    never overrides a real native class that's already there."""
     import comfy_extras.nodes_minimax_h3 as native
     if not hasattr(native, "MiniMaxH3VideoExtend"):
         native.MiniMaxH3VideoExtend = _NativeShim
+    if not hasattr(native, "MiniMaxH3EncodeAV"):
+        native.MiniMaxH3EncodeAV = MiniMaxH3EncodeAVPatched
 
 
 NODE_CLASS_MAPPINGS = {
     "MiniMaxH3VideoExtendPatched": MiniMaxH3VideoExtendPatched,
+    "MiniMaxH3EncodeAVPatched": MiniMaxH3EncodeAVPatched,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "MiniMaxH3VideoExtendPatched": "MiniMax H3 Video Extend (Backported)",
+    "MiniMaxH3EncodeAVPatched": "MiniMax H3 Encode AV (Backported)",
 }

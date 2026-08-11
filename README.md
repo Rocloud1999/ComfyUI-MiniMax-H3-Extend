@@ -47,6 +47,15 @@ overrides a real fork's better native support):
    name there -- e.g. `ComfyUI-H3-Cast`'s `H3CastToVideoExtend` -- finds a
    working implementation transparently, no changes of its own needed.
 
+4. **`MiniMaxH3EncodeAVPatched`** node (`nodes.py`) -- `vae`-encodes video
+   frames (+ optional audio) into the AV latent `MiniMaxH3VideoExtendPatched`'s
+   (or the native node's) `context_latent` input needs, for feeding an
+   externally-loaded prior clip (e.g. `VHS_LoadVideo`) into either. Vendored
+   from the native `MiniMaxH3EncodeAV`, which isn't part of stock/public
+   support either. Lives here rather than in `ComfyUI-H3-Cast` since it's an
+   extend/continuation concern, not a cast/character one -- also injected
+   into the native namespace the same way as `MiniMaxH3VideoExtend` above.
+
 ## Deliberately NOT ported
 
 The fork has diverged substantially from upstream ComfyUI (72 files,
