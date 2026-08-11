@@ -57,6 +57,11 @@ overrides a real fork's better native support):
    into the native namespace the same way as `MiniMaxH3VideoExtend` above.
 
 
+Confirmed working via live testing (2026-08-11) across text-to-video,
+reference-to-video, and cast-to-video continuation. Recommended starting
+settings: `context_frames` 2, `ref_spacing` 1-2, `ref_decay` 0.3, `ref_ramp`
+3-4 (5-6 if the prior clip had more motion than usual).
+
 ## Install
 
 Same as any custom node pack -- clone into `custom_nodes/`, restart ComfyUI.
