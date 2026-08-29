@@ -82,7 +82,7 @@ def _build_ref_blocks(vae, audio_vae, width, height, frame_count, ref_image_size
     CANVAS_MULTIPLE = 32
     REF_IMAGE_SHORT_EDGE = 2048
     FPS = 24
-    encode_ref_audio = native.MiniMaxH3ReferenceToVideo._encode_ref_audio
+    encode_ref_audio = native._encode_ref_audio
 
     ref_items = []
     ref_blocks = []
