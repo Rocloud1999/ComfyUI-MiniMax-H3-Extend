@@ -1,21 +1,5 @@
 # ComfyUI-MiniMax-H3-Extend
 
-Backports MiniMax H3 **video-extend** (continuation) support onto stock/public
-ComfyUI installs. The native `MiniMaxH3VideoExtend` node only exists on
-[kat3ri/ComfyUI](https://github.com/kat3ri/ComfyUI)'s
-`feat/minimax-h3-video-extend` branch (or later) -- confirmed 2026-08-11
-against a real "clean" master-branch ComfyUI that continuation isn't a
-missing node so much as a missing capability in the DiT model's own
-positional-encoding code, which stock's `PackedLayout` explicitly rejects:
-
-```python
-if pixel_index == 0:
-    cond_t = ...
-elif frame_count is not None and pixel_index == frame_count - 1:
-    cond_t = ...
-else:
-    raise ValueError("only first/last keyframe anchors are supported")
-```
 
 ## What this does
 
