@@ -1,8 +1,7 @@
-"""The actual MiniMax H3 Video Extend node, backed by patch.py's PackedLayout/
-extra_conds patches. See patch.py's module docstring for the full mechanism
-and its README.md for verification status -- this is a real feature port,
-reasoned through against the fork's actual model code, but not yet confirmed
-against a live reference render.
+"""The actual MiniMax H3 Video Extend node. On ComfyUI >= 0.34 it runs on
+stock's own keyframe support, nothing patched; on older ComfyUI it is backed
+by patch.py's PackedLayout/extra_conds patches, installed on first use. See
+patch.py's module docstring for the full mechanism.
 
 Exposes two things:
   MiniMaxH3VideoExtendPatched  A normal, directly-draggable ComfyUI node
@@ -29,12 +28,24 @@ def _context_span(n_frames):
     return sum(h3model.FRAME_RESCALE * h3model.FRAME_PER_TOKEN[k % 5] for k in range(-n_frames, 0))
 
 
-def _context_keyframes(context_latent, context_frames):
+def _context_keyframes(context_latent, context_frames, native_keyframes):
     """Build context/context_audio keyframe dicts continuing a prior
     generation's AV latent, plus the (width, height) it implies. Simplified
     from the fork's version: no static_time (that's specifically for a
     spatial/world reference, not "continue a real prior clip"), no aug/
-    noise-augmentation strength override."""
+    noise-augmentation strength override.
+
+    native_keyframes (ComfyUI >= 0.34): stock PackedLayout places each
+    keyframe at target_origin + FRAME_RESCALE * resolved_frame_index and lays
+    a multi-frame keyframe out on a fresh clip's own spacing, so each carried
+    frame becomes its own single-frame keyframe at a negative index -- the
+    exact positions patch.py's legacy layout gives them, last frame at zero
+    distance -- and audio becomes an audio-only keyframe ending at the origin.
+    Otherwise emit the kind="context"/"context_audio" dicts patch.py's
+    legacy layout reads."""
+    import comfy.ldm.minimax.model as h3model
+    from . import patch
+
     ctx_samples = context_latent["samples"]
     is_av = ctx_samples.is_nested
     ctx_video = ctx_samples.tensors[0] if is_av else ctx_samples
@@ -45,14 +56,24 @@ def _context_keyframes(context_latent, context_frames):
     n_frames = min(context_frames, ctx_t)
     width, height = ctx_w * 16, ctx_h * 16  # inherit the source clip's canvas exactly
 
-    keyframes = [{"kind": "context", "num_frames": n_frames,
-                  "latent": ctx_video[:, :, ctx_t - n_frames:, :, :]}]
+    video = ctx_video[:, :, ctx_t - n_frames:, :, :]
+    if native_keyframes:
+        keyframes = [{"resolved_frame_index": -patch._context_k_distance(k) / h3model.FRAME_RESCALE,
+                      "latent": video[:, :, i:i + 1]}
+                     for i, k in enumerate(range(1 - n_frames, 1))]
+    else:
+        keyframes = [{"kind": "context", "num_frames": n_frames, "latent": video}]
     if ctx_audio is not None:
         ctx_audio_t = ctx_audio.shape[-1]
         n_audio_frames = min(round(_context_span(n_frames)), ctx_audio_t)
         if n_audio_frames > 0:
-            keyframes.append({"kind": "context_audio", "num_frames": n_audio_frames,
-                              "audio_latent": ctx_audio[:, :, :, ctx_audio_t - n_audio_frames:]})
+            audio = ctx_audio[:, :, :, ctx_audio_t - n_audio_frames:]
+            if native_keyframes:
+                keyframes.append({"resolved_frame_index": -n_audio_frames / h3model.FRAME_RESCALE,
+                                  "audio_latent": audio})
+            else:
+                keyframes.append({"kind": "context_audio", "num_frames": n_audio_frames,
+                                  "audio_latent": audio})
     return width, height, keyframes
 
 
@@ -154,8 +175,12 @@ def _execute(clip, vae, context_latent, prompt, length, context_frames=2, pin_la
              ref_videos=None, ref_video_audios=None, ref_audios=None):
     import node_helpers
     import comfy_extras.nodes_minimax_h3 as native
+    from . import patch
 
-    width, height, keyframes = _context_keyframes(context_latent, context_frames)
+    native_keyframes = patch.native_keyframes_supported()
+    if not native_keyframes:
+        patch.apply()  # legacy ComfyUI only; idempotent, gated to this pack's keyframes
+    width, height, keyframes = _context_keyframes(context_latent, context_frames, native_keyframes)
     if first_frame is not None:
         img = native._resize(first_frame[:1], width, height, "disabled")
         keyframes.append({"resolved_frame_index": 0, "image": img})
@@ -310,6 +335,8 @@ class _NativeShim:
     dropped gracefully by the caller's own inspect.signature check before
     this is ever invoked, so this only needs to declare what it truly
     supports."""
+
+    _h3_extend_shim = True  # lets patch._native_has_video_extend() tell it from a real native class
 
     @classmethod
     def execute(cls, clip, vae, audio_vae, context_latent, prompt, length, context_frames=2,

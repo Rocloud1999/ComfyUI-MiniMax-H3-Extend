@@ -7,10 +7,17 @@ MiniMaxH3.extra_conds drops keyframe-contributed cond latents entirely
 whenever ref_images are ALSO present in the same call, since it overwrites
 cond_video_latents from refs instead of appending to it).
 
-Two patches, both monkey-applied at import time and both skipped outright if
-the native MiniMaxH3VideoExtend class already exists (i.e. this is already
-running on a ComfyUI that has better, more complete native support -- this
-pack must never override that):
+ComfyUI >= 0.34 needs none of this: its PackedLayout places keyframes at any
+(even negative) resolved_frame_index, carries multi-frame and audio keyframes,
+and appends ref latents after keyframe ones. There nodes.py expresses context
+as plain native keyframes and apply() is never called.
+
+On older ComfyUI (<= 0.33.x) two patches are installed lazily, the first time
+MiniMaxH3VideoExtendPatched actually runs -- never at import -- and both pass
+straight through to stock's own code unless the keyframes carry this pack's
+kind="context"/"context_audio" markers, so workflows that don't use this pack
+are unaffected even after installation. Skipped outright if the native
+MiniMaxH3VideoExtend class already exists (a fork with real support):
 
 1. comfy.ldm.minimax.model.PackedLayout.__init__ -- adds handling for
    keyframe dicts carrying kind="context" (trailing video latent frames of a
@@ -44,16 +51,40 @@ work, the same way everything else in this project needed live verification
 rather than being trusted from source-reading alone.
 """
 
+import inspect
+
 import torch
 
 import comfy.ldm.minimax.model as h3model
 import comfy.model_base as model_base
 import comfy.conds
 
+# captured before apply() can replace them, so detection and pass-through
+# always see stock's own code
+_stock_packed_layout_init = h3model.PackedLayout.__init__
+_stock_extra_conds = model_base.MiniMaxH3.extra_conds
+_applied = False
+
+CONTEXT_KINDS = ("context", "context_audio")
+
 
 def _native_has_video_extend() -> bool:
+    """A real native class, not this pack's own inject_into_native() shim --
+    that runs at import, before apply() ever gets a chance to look."""
     import comfy_extras.nodes_minimax_h3 as native
-    return hasattr(native, "MiniMaxH3VideoExtend")
+    cls = getattr(native, "MiniMaxH3VideoExtend", None)
+    return cls is not None and not getattr(cls, "_h3_extend_shim", False)
+
+
+def native_keyframes_supported() -> bool:
+    """True on ComfyUI >= 0.34, whose PackedLayout anchors keyframes at an
+    arbitrary resolved_frame_index; older layouts take a frame_count argument
+    and hard-reject anything but the first/last frame."""
+    return "frame_count" not in inspect.signature(_stock_packed_layout_init).parameters
+
+
+def _is_extend_call(keyframes) -> bool:
+    return bool(keyframes) and any(kf.get("kind") in CONTEXT_KINDS for kf in keyframes)
 
 
 def _refs_cursor_delta(refs):
@@ -86,6 +117,9 @@ def _context_k_distance(k):
 
 def _patched_packed_layout_init(self, text_len, latent_t, latent_h, latent_w, audio_t,
                                  keyframes=None, refs=None, frame_count=None):
+    if not _is_extend_call(keyframes):
+        return _stock_packed_layout_init(self, text_len, latent_t, latent_h, latent_w, audio_t,
+                                         keyframes=keyframes, refs=refs, frame_count=frame_count)
     frame, w_grid = h3model._frame_grid(latent_h, latent_w)
     frame_rows = frame.shape[0]
 
@@ -222,6 +256,8 @@ def _patched_packed_layout_init(self, text_len, latent_t, latent_h, latent_w, au
 
 
 def _patched_extra_conds(self, **kwargs):
+    if not _is_extend_call(kwargs.get("minimax_keyframes", None)):
+        return _stock_extra_conds(self, **kwargs)
     out = model_base.BaseModel.extra_conds(self, **kwargs)
     cross_attn = kwargs.get("cross_attn", None)
     if cross_attn is not None:
@@ -276,10 +312,17 @@ def _patched_extra_conds(self, **kwargs):
 
 
 def apply() -> bool:
-    """Returns True if the patches were applied, False if skipped because
-    the native class already exists (already on a ComfyUI with real support)."""
-    if _native_has_video_extend():
+    """Idempotent. Returns True if the (pass-through-gated) patches are
+    installed, False if not needed: native keyframe support (ComfyUI >= 0.34)
+    or a native MiniMaxH3VideoExtend class already present."""
+    global _applied
+    if _applied:
+        return True
+    if native_keyframes_supported() or _native_has_video_extend():
         return False
     h3model.PackedLayout.__init__ = _patched_packed_layout_init
     model_base.MiniMaxH3.extra_conds = _patched_extra_conds
+    _applied = True
+    print("[ComfyUI-MiniMax-H3-Extend] Installed legacy PackedLayout/extra_conds patches "
+          "(ComfyUI <= 0.33.x); non-extend H3 workflows pass through to stock code unchanged.")
     return True
