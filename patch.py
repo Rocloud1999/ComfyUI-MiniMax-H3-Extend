@@ -104,15 +104,19 @@ def _refs_cursor_delta(refs):
     return delta
 
 
-def _context_k_distance(k):
+def _context_k_distance(k, last_index=0):
     """Distance from target_origin for context slot k (k<=0): k=0 is the
     hard zero-RoPE-distance anchor (the same trick that makes first-frame
-    keyframes lock identity so reliably), k=-m sums the natural per-step
-    FRAME_PER_TOKEN cycle for m steps back."""
+    keyframes lock identity so reliably), k=-m sums the spans of the m source
+    frames stepped back over. Frame j of the source clip spans
+    FRAME_PER_TOKEN[j % 5], so the walk is phased by the anchor's own index
+    in the source (last_index): an H3-generated latent is always 5m+2 frames
+    long, putting its last frame at cycle index 1 (spans back: 1,4,4,4,4),
+    not index 0 (4,4,4,4,1). last_index=0 reproduces the old index-0 walk."""
     if k >= 0:
         return 0.0
     m = -k
-    return sum(h3model.FRAME_RESCALE * h3model.FRAME_PER_TOKEN[(-i) % 5] for i in range(1, m + 1))
+    return sum(h3model.FRAME_RESCALE * h3model.FRAME_PER_TOKEN[(last_index - i) % 5] for i in range(1, m + 1))
 
 
 def _patched_packed_layout_init(self, text_len, latent_t, latent_h, latent_w, audio_t,
@@ -145,7 +149,9 @@ def _patched_packed_layout_init(self, text_len, latent_t, latent_h, latent_w, au
             if kf.get("kind") == "context":
                 n_frames = kf["num_frames"]
                 ks = range(context_k_cursor - n_frames + 1, context_k_cursor + 1)
-                t_grid = torch.tensor([target_origin - _context_k_distance(k) for k in ks], dtype=torch.float64)
+                last_index = kf.get("last_index", 0)
+                t_grid = torch.tensor([target_origin - _context_k_distance(k, last_index) for k in ks],
+                                      dtype=torch.float64)
                 context_k_cursor -= n_frames
                 g = torch.empty(n_frames, frame_rows, 3, dtype=torch.float64)
                 g[:, :, 0] = t_grid[:, None]

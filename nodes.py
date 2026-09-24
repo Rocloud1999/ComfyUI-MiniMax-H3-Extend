@@ -21,11 +21,13 @@ import math
 import torch
 
 
-def _context_span(n_frames):
+def _context_span(n_frames, last_index):
     """Cursor-axis duration spanned by n_frames trailing latent frames ending
-    at a target origin -- pure position math, no model weights involved."""
-    import comfy.ldm.minimax.model as h3model
-    return sum(h3model.FRAME_RESCALE * h3model.FRAME_PER_TOKEN[k % 5] for k in range(-n_frames, 0))
+    at a target origin -- pure position math, no model weights involved.
+    Same phased walk as the video context positions, so the audio context
+    covers the same window as the video it sits under."""
+    from . import patch
+    return patch._context_k_distance(-n_frames, last_index)
 
 
 def _context_keyframes(context_latent, context_frames, native_keyframes):
@@ -57,15 +59,16 @@ def _context_keyframes(context_latent, context_frames, native_keyframes):
     width, height = ctx_w * 16, ctx_h * 16  # inherit the source clip's canvas exactly
 
     video = ctx_video[:, :, ctx_t - n_frames:, :, :]
+    last_index = ctx_t - 1  # the anchor's index in the source clip phases the spacing walk
     if native_keyframes:
-        keyframes = [{"resolved_frame_index": -patch._context_k_distance(k) / h3model.FRAME_RESCALE,
+        keyframes = [{"resolved_frame_index": -patch._context_k_distance(k, last_index) / h3model.FRAME_RESCALE,
                       "latent": video[:, :, i:i + 1]}
                      for i, k in enumerate(range(1 - n_frames, 1))]
     else:
-        keyframes = [{"kind": "context", "num_frames": n_frames, "latent": video}]
+        keyframes = [{"kind": "context", "num_frames": n_frames, "latent": video, "last_index": last_index}]
     if ctx_audio is not None:
         ctx_audio_t = ctx_audio.shape[-1]
-        n_audio_frames = min(round(_context_span(n_frames)), ctx_audio_t)
+        n_audio_frames = min(round(_context_span(n_frames, last_index)), ctx_audio_t)
         if n_audio_frames > 0:
             audio = ctx_audio[:, :, :, ctx_audio_t - n_audio_frames:]
             if native_keyframes:
