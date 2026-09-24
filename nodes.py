@@ -82,7 +82,12 @@ def _build_ref_blocks(vae, audio_vae, width, height, frame_count, ref_image_size
     CANVAS_MULTIPLE = 32
     REF_IMAGE_SHORT_EDGE = 2048
     FPS = 24
-    encode_ref_audio = native._encode_ref_audio
+    # a staticmethod on MiniMaxH3ReferenceToVideo in ComfyUI 0.33.x,
+    # module-level from 0.34 on -- two-step so the class attribute is never
+    # touched on versions where the module-level one exists
+    encode_ref_audio = getattr(native, "_encode_ref_audio", None)
+    if encode_ref_audio is None:
+        encode_ref_audio = native.MiniMaxH3ReferenceToVideo._encode_ref_audio
 
     ref_items = []
     ref_blocks = []
