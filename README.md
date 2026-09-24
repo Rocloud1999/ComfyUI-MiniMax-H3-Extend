@@ -28,5 +28,16 @@ settings: `context_frames` 2, `ref_spacing` 1-2, `ref_decay` 0.3, `ref_ramp`
 ## Install
 
 Same as any custom node pack -- clone into `custom_nodes/`, restart ComfyUI.
-No core ComfyUI files are edited; everything is monkey-patched in memory at
-import time. To remove: delete this folder, restart.
+No core ComfyUI files are edited, and nothing in ComfyUI's model code is
+touched at import time:
+
+- **ComfyUI >= 0.34**: the extend node runs entirely on stock's own keyframe
+  support (context frames become ordinary keyframes at negative frame
+  indices). Nothing is patched, ever.
+- **ComfyUI <= 0.33.x**: stock can't anchor keyframes anywhere but the first/
+  last frame, so `PackedLayout`/`MiniMaxH3.extra_conds` patches are installed
+  the first time an extend node actually runs. Even then they pass straight
+  through to stock code for any conditioning this pack didn't build, so other
+  H3 workflows (inpainting, first/last frame, etc.) behave exactly as stock.
+
+To remove: delete this folder, restart.
