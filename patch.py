@@ -13,11 +13,13 @@ and appends ref latents after keyframe ones. There nodes.py expresses context
 as plain native keyframes and apply() is never called.
 
 On older ComfyUI (<= 0.33.x) two patches are installed lazily, the first time
-MiniMaxH3VideoExtendPatched actually runs -- never at import -- and both pass
+an extend or endpoint node actually runs -- never at import -- and both pass
 straight through to stock's own code unless the keyframes carry this pack's
-kind="context"/"context_audio" markers, so workflows that don't use this pack
-are unaffected even after installation. Skipped outright if the native
-MiniMaxH3VideoExtend class already exists (a fork with real support):
+kind="context"/"context_audio" or _h3_extend_endpoint markers. The endpoint
+marker enables BOTH the target-origin correction and latent append fix
+without fabricating a context clip. Unmarked workflows pass through unchanged.
+Skipped outright if the native MiniMaxH3VideoExtend class already exists
+(a fork with real support):
 
 1. comfy.ldm.minimax.model.PackedLayout.__init__ -- adds handling for
    keyframe dicts carrying kind="context" (trailing video latent frames of a
@@ -66,6 +68,7 @@ _stock_extra_conds = model_base.MiniMaxH3.extra_conds
 _applied = False
 
 CONTEXT_KINDS = ("context", "context_audio")
+ENDPOINT_MARKER = "_h3_extend_endpoint"
 
 
 def _native_has_video_extend() -> bool:
@@ -84,7 +87,15 @@ def native_keyframes_supported() -> bool:
 
 
 def _is_extend_call(keyframes) -> bool:
-    return bool(keyframes) and any(kf.get("kind") in CONTEXT_KINDS for kf in keyframes)
+    """Gate BOTH legacy patches to conditioning explicitly owned by this pack.
+
+    Endpoint-only calls need the same origin/append fixes as continuation,
+    but must not pretend to contain past frames or affect unrelated nodes.
+    """
+    return bool(keyframes) and any(
+        kf.get("kind") in CONTEXT_KINDS or kf.get(ENDPOINT_MARKER) is True
+        for kf in keyframes
+    )
 
 
 def _refs_cursor_delta(refs):
@@ -330,5 +341,5 @@ def apply() -> bool:
     model_base.MiniMaxH3.extra_conds = _patched_extra_conds
     _applied = True
     print("[ComfyUI-MiniMax-H3-Extend] Installed legacy PackedLayout/extra_conds patches "
-          "(ComfyUI <= 0.33.x); non-extend H3 workflows pass through to stock code unchanged.")
+          "(ComfyUI <= 0.33.x); unmarked H3 workflows pass through to stock code unchanged.")
     return True
