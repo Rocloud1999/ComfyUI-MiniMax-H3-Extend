@@ -1,15 +1,20 @@
-"""ComfyUI-MiniMax-H3-Extend -- video-extend (continuation) nodes for stock/
-public ComfyUI. See patch.py's module docstring for the mechanism.
+"""ComfyUI-MiniMax-H3-Extend -- continuation and Ref2VA endpoint nodes.
 
 Nothing in ComfyUI's model code is touched at import time. On ComfyUI >= 0.34
-the nodes run on stock's own keyframe support and nothing is ever patched; on
-older ComfyUI, patch.apply() runs the first time an extend node executes, and
-its patches pass straight through to stock code for any conditioning this
-pack didn't build. The native-namespace injection below only adds names that
-are genuinely absent -- it never overrides an existing native class.
+these nodes use native keyframe support. On older ComfyUI, patches are
+installed on first execution and gated to this pack's context/endpoint
+markers. The native-namespace injection only adds genuinely absent names.
 """
 
 from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS, inject_into_native
+from .endpoint_nodes import (
+    NODE_CLASS_MAPPINGS as ENDPOINT_CLASS_MAPPINGS,
+    NODE_DISPLAY_NAME_MAPPINGS as ENDPOINT_DISPLAY_NAME_MAPPINGS,
+)
+
+# Copy rather than mutate nodes.py's registries on import.
+NODE_CLASS_MAPPINGS = {**NODE_CLASS_MAPPINGS, **ENDPOINT_CLASS_MAPPINGS}
+NODE_DISPLAY_NAME_MAPPINGS = {**NODE_DISPLAY_NAME_MAPPINGS, **ENDPOINT_DISPLAY_NAME_MAPPINGS}
 
 inject_into_native()
 
