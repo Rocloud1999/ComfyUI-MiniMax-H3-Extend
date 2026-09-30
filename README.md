@@ -19,6 +19,17 @@
    extend/continuation concern, not a cast/character one -- also injected
    into the native namespace the same way as `MiniMaxH3VideoExtend` above.
 
+3. **`MiniMaxH3ReferenceToVideoWithEndpoints`** (`endpoint_nodes.py`) --
+   official-style V3 Autogrow references plus `first_frame` / `last_frame`,
+   without a previous clip. Supports up to 9 independent pictures, 3 videos,
+   3 paired video soundtracks and 3 standalone audio clips. Outputs
+   `positive` and `latent`. This replaces the previous endpoint interface;
+   there is no classic endpoint fallback or alias. Re-add the endpoint node
+   in existing workflows. The original continuation nodes and `patch.py`
+   are unchanged. See [usage, migration and test limitations](docs/ref2va-endpoints.md).
+
+The following live-test status concerns the original continuation nodes,
+not the Autogrow endpoint node:
 
 Confirmed working via live testing (2026-08-11) across text-to-video,
 reference-to-video, and cast-to-video continuation. Recommended starting
@@ -36,8 +47,26 @@ touched at import time:
   indices). Nothing is patched, ever.
 - **ComfyUI <= 0.33.x**: stock can't anchor keyframes anywhere but the first/
   last frame, so `PackedLayout`/`MiniMaxH3.extra_conds` patches are installed
-  the first time an extend node actually runs. Even then they pass straight
-  through to stock code for any conditioning this pack didn't build, so other
-  H3 workflows (inpainting, first/last frame, etc.) behave exactly as stock.
+  the first time an extend or endpoint node actually runs. Even then they
+  pass straight through to stock code for any conditioning this pack didn't
+  build, so other H3 workflows retain the existing pass-through behavior.
+
+The Autogrow endpoint additionally needs ComfyUI's V3 Autogrow API and a
+compatible frontend. If that API is unavailable, only the new endpoint
+node is skipped; the original continuation registrations remain available.
+Audio references require an audio VAE; endpoint images require a video VAE.
 
 To remove: delete this folder, restart.
+
+## Tests
+
+```bash
+python -m unittest discover -s tests -v
+python tests/check_history_parity.py
+```
+
+Requires PyTorch. The second command reads the former endpoint implementation
+from Git history (fetch the baseline commit first for a shallow checkout).
+Tests cover the actual reference builder and legacy patch, using mocked
+ComfyUI API/CLIP/VAE components. They do not validate frontend interaction,
+real model inference or pixel-identical endpoints.
